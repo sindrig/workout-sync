@@ -1,0 +1,48 @@
+{
+  "workoutName": "[WS] Ról 5km",
+  "sportType": {
+    "sportTypeId": 1,
+    "sportTypeKey": "running"
+  },
+  "workoutSegments": [
+    {
+      "segmentOrder": 1,
+      "sportType": {
+        "sportTypeId": 1,
+        "sportTypeKey": "running"
+      },
+      "workoutSteps": [
+        {
+          "type": "WorkoutStep",
+          "stepOrder": 1,
+          "intensity": "WARMUP",
+          "durationType": "DISTANCE",
+          "durationValue": 1000.0,
+          "targetType": "NO_TARGET",
+          "targetValueOne": null,
+          "targetValueTwo": null
+        },
+        {
+          "type": "WorkoutStep",
+          "stepOrder": 2,
+          "intensity": "ACTIVE",
+          "durationType": "DISTANCE",
+          "durationValue": 3000.0,
+          "targetType": "PACE",
+          "targetValueOne": 3.08,
+          "targetValueTwo": 3.28
+        },
+        {
+          "type": "WorkoutStep",
+          "stepOrder": 3,
+          "intensity": "COOLDOWN",
+          "durationType": "DISTANCE",
+          "durationValue": 1000.0,
+          "targetType": "NO_TARGET",
+          "targetValueOne": null,
+          "targetValueTwo": null
+        }
+      ]
+    }
+  ]
+}

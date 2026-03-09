@@ -1,0 +1,28 @@
+{
+  "workoutName": "[WS] Styrktaræfing",
+  "sportType": {
+    "sportTypeId": 4,
+    "sportTypeKey": "strength_training"
+  },
+  "workoutSegments": [
+    {
+      "segmentOrder": 1,
+      "sportType": {
+        "sportTypeId": 4,
+        "sportTypeKey": "strength_training"
+      },
+      "workoutSteps": [
+        {
+          "type": "WorkoutStep",
+          "stepOrder": 1,
+          "intensity": "ACTIVE",
+          "durationType": "LAP_BUTTON_PRESS",
+          "durationValue": null,
+          "targetType": "NO_TARGET",
+          "targetValueOne": null,
+          "targetValueTwo": null
+        }
+      ]
+    }
+  ]
+}
