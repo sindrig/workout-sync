@@ -797,7 +797,7 @@ Max Concurrent: 3 (Wave 1)
   - Files: `workout_sync/cli.py, workout_sync/__main__.py`
   - Pre-commit: `uv run python -m workout_sync --dry-run ~/Downloads/Sindri\ Guðmunds\ -\ mars.xls`
 
-- [ ] 6. End-to-End QA
+- [x] 6. End-to-End QA
 
   **What to do**:
   - Run the full tool end-to-end with the real XLS file

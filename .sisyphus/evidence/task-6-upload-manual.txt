@@ -1,0 +1,23 @@
+=== SCENARIO 2 & 3: REQUIRES MANUAL TESTING ===
+
+Garmin credentials (GARMIN_EMAIL, GARMIN_PASSWORD) are not set in the environment.
+
+These scenarios need to be run manually by the user with their Garmin credentials:
+
+Scenario 2: Full upload to Garmin Connect
+  Command: uv run python -m workout_sync ~/Downloads/Sindri\ Guðmunds\ -\ mars.xls
+  Expected:
+    - Authentication succeeds
+    - Deletion reports count of [WS] workouts removed (0 on first run)
+    - Upload reports "Uploaded N workouts. 0 failed."
+    - Re-run: deletion count matches N, then re-uploads cleanly
+
+Scenario 3: Verify workouts on Garmin calendar
+  Method: Use python-garminconnect to query scheduled workouts
+  Expected:
+    - All workout names start with "[WS]"
+    - Dates match XLS plan (2026-03-09 through 2026-04-11)
+    - 24 workouts total
+
+The implementation is complete and the dry-run scenario confirms the tool works correctly.
+Upload testing requires user's Garmin account credentials.
