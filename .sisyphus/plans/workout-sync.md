@@ -241,7 +241,7 @@ Max Concurrent: 3 (Wave 1)
   - Files: `pyproject.toml, workout_sync/*.py, .env.example`
   - Pre-commit: `uv run python -m workout_sync --help`
 
-- [ ] 2. XLS Parser Module
+- [x] 2. XLS Parser Module
 
   **What to do**:
   - Implement `workout_sync/parser.py`
@@ -360,7 +360,7 @@ Max Concurrent: 3 (Wave 1)
   - Files: `workout_sync/parser.py`
   - Pre-commit: `uv run python -c "from workout_sync.parser import parse_xls; print('OK')"`
 
-- [ ] 3. Garmin Workout JSON Builder
+- [x] 3. Garmin Workout JSON Builder
 
   **What to do**:
   - Implement `workout_sync/builder.py`
@@ -545,7 +545,7 @@ Max Concurrent: 3 (Wave 1)
   - Files: `workout_sync/builder.py`
   - Pre-commit: `uv run python -c "from workout_sync.builder import build_workout_json; print('OK')"`
 
-- [ ] 4. Garmin Connect Client (Auth + Upload + Schedule + Delete)
+- [x] 4. Garmin Connect Client (Auth + Upload + Schedule + Delete)
 
   **What to do**:
   - Implement `workout_sync/garmin_client.py`
