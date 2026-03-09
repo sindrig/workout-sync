@@ -1,0 +1,36 @@
+=== REST DAY VERIFICATION ===
+
+Rest days (0km, non-strength) in output: 0
+Pure hv-prefixed entries (excluding styrktaræfing): 0
+
+All descriptions in output:
+  [  ] 2026-03-09: 'samæfing í Kaplakrika kl  18:00' (9.0 km, samæfing)
+  [  ] 2026-03-10: 'ról' (10.0 km, ról)
+  [0K] 2026-03-11: 'hv eða styrktaræfing' (0.0 km, styrktaræfing)
+  [  ] 2026-03-12: 'samæfing í Kaplakrika kl  18:00' (9.0 km, samæfing)
+  [  ] 2026-03-14: 'ról' (16.0 km, ról)
+  [  ] 2026-03-16: 'samæfing frá Laugardalslaug kl 17:30' (9.0 km, samæfing)
+  [  ] 2026-03-17: 'ról' (10.0 km, ról)
+  [0K] 2026-03-18: 'hv eða styrktaræfing' (0.0 km, styrktaræfing)
+  [  ] 2026-03-19: 'samæfing í Kaplakrika kl  18:00 / eða úti' (9.0 km, samæfing)
+  [  ] 2026-03-21: 'ról' (18.0 km, ról)
+  [  ] 2026-03-23: 'hraðaæf frá Laugardalslaug 17:30' (10.0 km, hraðaæf)
+  [  ] 2026-03-24: 'ról' (10.0 km, ról)
+  [  ] 2026-03-26: 'Hlaupasería FH og Hlaupárs 5 km /eða samæf' (10.0 km, samæfing)
+  [  ] 2026-03-28: 'ról' (18.0 km, ról)
+  [  ] 2026-03-30: 'samæfing frá Laugardalslaug kl 17:30' (10.0 km, samæfing)
+  [  ] 2026-03-31: 'ról' (10.0 km, ról)
+  [  ] 2026-04-01: 'ról' (8.0 km, ról)
+  [  ] 2026-04-02: 'jafnt  (ekki samæfing v/Skírdagur)' (10.0 km, jafnt)
+  [  ] 2026-04-04: 'ról' (18.0 km, ról)
+  [  ] 2026-04-06: 'ról (ekki samæfing v/Annar í Páskum)' (12.0 km, ról)
+  [  ] 2026-04-07: 'ról' (10.0 km, ról)
+  [  ] 2026-04-08: 'ról' (8.0 km, ról)
+  [  ] 2026-04-09: 'hraðaæf í Heiðmörk 17:30' (10.0 km, hraðaæf)
+  [  ] 2026-04-11: 'ról' (20.0 km, ról)
+
+=== STRENGTH WORKOUT ENTRIES (0km kept) ===
+  2026-03-11: hv eða styrktaræfing (0.0 km)
+  2026-03-18: hv eða styrktaræfing (0.0 km)
+
+VERDICT: Zero rest days in output = PASS
