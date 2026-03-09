@@ -1,0 +1,47 @@
+=== Task 1 CLI Verification Report ===
+Date: 2026-03-09
+
+## Changes Made
+1. Added xls_file positional argument to argparse in workout_sync/cli.py
+2. Added --dry-run flag with action='store_true' to argparse
+3. Deleted README.md (scope creep)
+4. Deleted main.py (scope creep)
+
+## Verification 1: Help Output
+Command: uv run python -m workout_sync --help
+Status: PASS
+
+Output:
+usage: workout-sync [-h] [--dry-run] [--version] xls_file
+
+Sync workouts from Garmin Connect
+
+positional arguments:
+  xls_file    Path to XLS file
+
+options:
+  -h, --help  show this help message and exit
+  --dry-run   Preview without uploading
+  --version   show program's version number and exit
+
+✓ Shows all required arguments: xls_file (positional), --dry-run (flag), --version (flag)
+
+## Verification 2: Argument Parsing
+Command: uv run python -m workout_sync --dry-run test.xls
+Status: PASS
+
+Output:
+Workout Sync CLI - Not implemented yet
+
+✓ Arguments parsed successfully
+✓ No argparse errors
+✓ Placeholder message displayed (not implemented yet)
+
+## Summary
+All requirements met:
+- xls_file positional argument: ✓
+- --dry-run flag: ✓
+- --version flag: ✓
+- README.md deleted: ✓
+- main.py deleted: ✓
+- Verification commands pass: ✓

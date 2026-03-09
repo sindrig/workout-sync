@@ -1,0 +1,18 @@
+# Task 1: .env.example Content - Evidence Report
+
+## File Location
+.env.example
+
+## Content
+GARMIN_EMAIL=your_email@example.com
+GARMIN_PASSWORD=your_password
+
+## Verification
+✓ File exists and is readable
+✓ Contains GARMIN_EMAIL placeholder
+✓ Contains GARMIN_PASSWORD placeholder
+
+## Notes
+- Both required environment variables are present
+- Placeholders are clear and follow standard naming conventions
+- File follows .env convention for template files
