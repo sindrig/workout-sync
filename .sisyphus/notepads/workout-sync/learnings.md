@@ -153,3 +153,150 @@
 ### LSP Environment Note
 - Pyright can't resolve `garminconnect` import (reportMissingImports) — false positive from venv resolution
 - Runtime import works fine via `uv run python -c "from workout_sync.garmin_client import GarminClient"`
+
+## Task F2: Code Quality Review
+
+### Review Results
+- 6 Python files reviewed, all py_compile PASS
+- No unused imports across any file
+- 1 justified `type: ignore` (garmin_client.py:59 — upstream type mismatch)
+- 1 bare `except Exception:` (garmin_client.py:26) — justified token fallback pattern
+- 26 print statements in cli.py + 5 in garmin_client.py — all user-facing CLI output, not debug
+- Zero commented-out code blocks
+- No AI slop: no over-abstraction, no factory patterns, no excessive docstrings
+- Minor note: builder.py:12-14 has stale docstring referencing "Task 2"
+- VERDICT: APPROVE
+
+## Garth `api=True` Flag - Header Handling Investigation
+
+**Date**: 2026-03-09
+
+### Finding: `api=True` Does NOT Add Required Headers
+
+After examining the garth source code (commit: `2427594aab32cb29cea30b593a20b752663e74ec`), I confirmed that **`api=True` does NOT automatically add the `Referer` or `nk: NT` headers**.
+
+### Evidence from garth Source Code
+
+**Location**: [garth/http.py lines 149-188](https://github.com/matin/garth/blob/2427594aab32cb29cea30b593a20b752663e74ec/src/garth/http.py#L149-L188)
+
+```python
+def request(
+    self,
+    method: str,
+    subdomain: str,
+    path: str,
+    /,
+    api: bool = False,
+    referrer: str | bool = False,
+    headers: dict = {},
+    **kwargs,
+) -> Response:
+    url = f"https://{subdomain}.{self.domain}"
+    url = urljoin(url, path)
+    if referrer is True and self.last_resp:
+        headers["referer"] = self.last_resp.url
+    if api:
+        assert self.oauth1_token, (
+            "OAuth1 token is required for API requests"
+        )
+        if (
+            not isinstance(self.oauth2_token, OAuth2Token)
+            or self.oauth2_token.expired
+        ):
+            self.refresh_oauth2()
+        headers["Authorization"] = str(self.oauth2_token)
+    # ... rest of method
+```
+
+**What `api=True` Actually Does**:
+1. Asserts that OAuth1 token exists
+2. Refreshes OAuth2 token if needed
+3. Adds **ONLY** the `Authorization` header with OAuth2 bearer token
+4. **Does NOT add `Referer` header**
+5. **Does NOT add `nk: NT` header**
+
+### Reference Implementation: mkuthan/garmin-workouts
+
+**Location**: [garmin-workouts/garminclient.py lines 10-13](https://github.com/mkuthan/garmin-workouts/blob/master/garminworkouts/garmin/garminclient.py#L10-L13)
+
+```python
+_REQUIRED_HEADERS = {
+    "Referer": "https://connect.garmin.com/modern/workouts",
+    "nk": "NT"
+}
+```
+
+The mkuthan/garmin-workouts project explicitly passes these headers to **all** workout service endpoints, including the schedule endpoint:
+
+```python
+def schedule_workout(self, workout_id, date):
+    url = f"{self.connect_url}{GarminClient._WORKOUT_SERVICE_ENDPOINT}/schedule/{workout_id}"
+    json_data = {"date": date}
+    response = self.session.post(url, headers=GarminClient._REQUIRED_HEADERS, json=json_data)
+    response.raise_for_status()
+```
+
+### Conclusion: Headers Must Be Explicitly Added
+
+The statement in the learnings notepad (line 141) that "Required headers (Referer, nk: NT) handled internally by garth's api=True flag" is **INCORRECT**.
+
+**Correct Implementation**:
+```python
+self.client.garth.post(
+    "connectapi",
+    f"/workout-service/schedule/{workout_id}",
+    json={"date": date_str},
+    api=True,
+    headers={
+        "Referer": "https://connect.garmin.com/modern/workouts",
+        "nk": "NT"
+    }
+)
+```
+
+### Why This May Still Work
+
+If the implementation is working without explicit headers, it could be because:
+1. Garmin's API may not strictly enforce these headers in all cases
+2. The `referrer=True` parameter (different from `api=True`) might add the Referer header from the last response
+3. Session cookies might bypass the need for these specific headers
+
+However, to match the reference implementation and ensure compatibility, these headers should be explicitly added.
+
+### Action Required
+
+The current implementation in `garmin_client.py` lines 73-78 does NOT explicitly set these headers:
+```python
+self.client.garth.post(
+    "connectapi",
+    f"/workout-service/schedule/{workout_id}",
+    json={"date": date_str},
+    api=True,
+)
+```
+
+This should be corrected to match the reference implementation for guaranteed compatibility.
+
+**Status**: Documented finding during Final Verification Wave. Implementation works for dry-run, but real Garmin upload not tested. Consider this a latent bug that should be fixed before production use.
+
+## Task X: Fix Schedule Endpoint Headers (2026-03-09)
+
+### Status: COMPLETED
+
+Applied the fix documented in the investigation above to `garmin_client.py` lines 73-78.
+
+**Change Made**: Added `headers` parameter to the `garth.post()` call:
+```python
+headers={
+    "Referer": "https://connect.garmin.com/modern/workouts",
+    "nk": "NT"
+}
+```
+
+**Verification**:
+- File modified successfully: lines 73-82 now include headers dict
+- Import verification passed: `uv run python -c "from workout_sync.garmin_client import GarminClient; print('OK')"` → OK
+- No syntax errors introduced
+- LSP diagnostic: only missing `garminconnect` import (expected, dependency not in LSP environment)
+
+**Reason**: The spec at plan line 592 explicitly requires these headers. The initial learnings entry (line 141) incorrectly stated that `api=True` handles them automatically. This was corrected through librarian investigation and is now implemented.

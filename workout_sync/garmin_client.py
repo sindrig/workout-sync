@@ -75,6 +75,10 @@ class GarminClient:
             f"/workout-service/schedule/{workout_id}",
             json={"date": date_str},
             api=True,
+            headers={
+                "Referer": "https://connect.garmin.com/modern/workouts",
+                "nk": "NT",
+            },
         )
 
         return result
