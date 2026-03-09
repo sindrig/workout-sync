@@ -124,3 +124,32 @@
 - styrktaræfing: strength_training sport, single LAP_BUTTON_PRESS step
 - fartleikur: 2km warmup | active no target | 2km cooldown
 - other: single active step, full distance, no target
+
+## Task 4: Garmin Connect Client
+
+### python-garminconnect API Surface
+- `Garmin(email, password, prompt_mfa=callable)` — constructor, prompt_mfa called if MFA required
+- `client.login(tokenstore=path)` — loads tokens from dir, or logs in with credentials
+- `client.garth.dump(dir)` — saves OAuth tokens to directory for next session
+- `client.get_workouts(start=0, limit=100)` — returns list of workout dicts (typed as dict but is actually list)
+- `client.upload_workout(json_dict)` — POSTs to /workout-service/workout, returns dict with workoutId
+- No built-in schedule_workout or delete_workout — use garth directly
+
+### Schedule Endpoint (from mkuthan/garmin-workouts)
+- `POST /workout-service/schedule/{workout_id}` with body `{"date": "YYYY-MM-DD"}`
+- Via garth: `client.garth.post("connectapi", url, json=payload, api=True)`
+- Required headers (Referer, nk: NT) handled internally by garth's api=True flag
+
+### Delete Endpoint
+- `DELETE /workout-service/workout/{workout_id}`
+- Via garth: `client.garth.request("DELETE", "connectapi", url, api=True)`
+- Same pattern used by python-garminconnect's own delete_activity method
+
+### Token Caching
+- garth saves OAuth1 + OAuth2 tokens to ~/.garth as JSON files
+- `garth.Client.load(path)` / `garth.Client.dump(path)` for persistence
+- Strategy: try loading cached tokens, catch any exception, fall back to fresh login
+
+### LSP Environment Note
+- Pyright can't resolve `garminconnect` import (reportMissingImports) — false positive from venv resolution
+- Runtime import works fine via `uv run python -c "from workout_sync.garmin_client import GarminClient"`
