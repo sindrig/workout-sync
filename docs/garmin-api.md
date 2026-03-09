@@ -122,7 +122,7 @@ The builder outputs Garmin's `ExecutableStepDTO` format that `python-garminconne
 
 ### Sport Types
 - Running: `{"sportTypeId": 1, "sportTypeKey": "running"}`
-- Strength: `{"sportTypeId": 4, "sportTypeKey": "strength_training"}`
+- Strength: `{"sportTypeId": 5, "sportTypeKey": "strength_training"}`
 
 ## Idempotency Strategy
 

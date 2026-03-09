@@ -23,7 +23,7 @@ class Workout:
 # Sport type constants
 # ---------------------------------------------------------------------------
 RUNNING_SPORT = {"sportTypeId": 1, "sportTypeKey": "running"}
-STRENGTH_SPORT = {"sportTypeId": 4, "sportTypeKey": "strength_training"}
+STRENGTH_SPORT = {"sportTypeId": 5, "sportTypeKey": "strength_training"}
 
 # ---------------------------------------------------------------------------
 # Garmin ExecutableStepDTO constants
