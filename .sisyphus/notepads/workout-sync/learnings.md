@@ -53,3 +53,74 @@
 - GarminClient will integrate with garminconnect library
 - CLI will orchestrate the complete workflow
 
+
+## Task 2: XLS Parser Implementation
+
+### xlrd Cell Types
+- `xlrd.XL_CELL_DATE` (ctype=3) identifies date cells — primary filter for data rows vs summary/legend
+- `xlrd.xldate_as_tuple(float_value, datemode)` returns (year, month, day, hour, min, sec) tuple
+- Must cast `cell_value()` return to `float` explicitly for Pyright compatibility (type stubs return `str`)
+- `xlrd.XL_CELL_NUMBER` (ctype=2) for numeric cells; empty cells have ctype=0
+
+### XLS File Structure (Sindri Guðmunds - mars.xls)
+- 61 rows, 6 columns; rows 0-7 are headers, rows 8-52 are data, rows 53-60 are legend
+- Weekly summary rows: col0 ctype != 3, col2 contains "vikan X - Y" pattern — safely skipped by date check
+- Empty separator rows between weeks: all ctypes=0 — safely skipped by date check
+- Data spans 2026-03-09 to 2026-04-11 (5 weeks of training)
+
+### Workout Type Classification Edge Cases
+- **Classification order matters**: "jafnt" MUST be checked before "samæfing" because descriptions like "jafnt (ekki samæfing v/Skírdagur)" contain both keywords. The parenthetical "ekki samæfing" means "not samæfing" (negative context).
+- Similarly "ról (ekki samæfing v/Annar í Páskum)" — "ról" checked first, correct.
+- "Hlaupasería FH og Hlaupárs 5 km /eða samæf" — matches "samæfing" via truncated "samæf" substring. Also has "Hlaupasería" fallback rule but "samæf" catches it first.
+- "hv eða styrktaræfing" (0km) — correctly kept as styrktaræfing (strength training, no running)
+- Pure "hv" and "hv  " (with trailing spaces) — rest days, correctly filtered out
+
+### Parsing Results
+- 24 total workouts extracted from 35 day-rows (11 rest days filtered)
+- Type breakdown: ról=13, samæfing=6, styrktaræfing=2, hraðaæf=2, jafnt=1
+- No fartleikur or "other" types in this month's plan
+- Description strings have trailing spaces from Excel — `.strip()` handles them
+
+### Rest Day Filtering
+- Rest = 0.0 km AND not styrktaræfing type
+- 11 rest days filtered: pure "hv" entries on fös (Friday) and sun (Sunday)
+- styrktaræfing entries on mið (Wednesday) kept despite 0km — these are strength training days
+
+## Task 3: Garmin Workout JSON Builder
+
+### Garmin Connect Workout JSON Schema (from real repos)
+- Real Garmin API uses `ExecutableStepDTO` as `type` field (not `WorkoutStep`)
+- Step types: `{"stepTypeId": 1, "stepTypeKey": "warmup"}`, `{"stepTypeId": 2, "stepTypeKey": "cooldown"}`, `{"stepTypeId": 3, "stepTypeKey": "interval"}`
+- End conditions: `{"conditionTypeId": 3, "conditionTypeKey": "distance"}` for distance, `{"conditionTypeId": 1, "conditionTypeKey": "lap.button"}` for lap press, `{"conditionTypeId": 2, "conditionTypeKey": "time"}` for time
+- Distance values are in meters (float), time in seconds
+- Pace targets use `{"workoutTargetTypeId": 6, "workoutTargetTypeKey": "pace.zone"}` with m/s values
+- No target: `{"workoutTargetTypeId": 1, "workoutTargetTypeKey": "no.target"}`
+- Sport types: running=1, cycling=2, strength_training=4
+- Segment structure: always 1 segment with segmentOrder=1
+
+### Key repos for Garmin workout JSON reference
+- `Taxuspt/garmin_mcp` — Most complete examples of workout templates with real Garmin API format
+- `st3v/garmin-workouts-mcp` — Has STEP_TYPE_MAPPING, END_CONDITION_TYPE_MAPPING (comprehensive ID lookups)
+- `mkuthan/garmin-workouts` — Python models for cycling workouts with RepeatGroupDTO
+- `cyberjunky/python-garminconnect` — `upload_workout()` just POST the JSON dict to Garmin API endpoint
+
+### Pace Conversion Formula
+- Input: "M:SS" per km → Output: (low_ms, high_ms) in meters/second
+- ±10 sec tolerance: slower pace (more sec/km) = lower m/s = targetValueOne; faster = higher m/s = targetValueTwo
+- Example: "5:15" → slow=5:25=325s/km=3.08m/s, fast=5:05=305s/km=3.28m/s
+
+### Builder Design Decisions
+- Used simplified schema fields (intensity, durationType, targetType as strings) per task spec rather than full DTO format
+- Future integration: may need to map to ExecutableStepDTO format for actual Garmin API upload
+- Edge case handling: when total distance < warmup+cooldown, proportionally scale down (no negative distances)
+- Zero-distance edge: 1km ról results in 500m warmup + 500m cooldown (no active step)
+- Workout type dispatch via STEP_TEMPLATES dict + PACE_TARGETS dict, clean separation
+
+### Workout Type Step Templates (implemented)
+- ról: 1km warmup | active @ 5:15/km | 1km cooldown
+- samæfing: 2km warmup | active no target | 2km cooldown
+- hraðaæf: 2.5km warmup | active INTERVAL | 2km cooldown
+- jafnt: 1km warmup | active @ 4:50/km | 1km cooldown
+- styrktaræfing: strength_training sport, single LAP_BUTTON_PRESS step
+- fartleikur: 2km warmup | active no target | 2km cooldown
+- other: single active step, full distance, no target
