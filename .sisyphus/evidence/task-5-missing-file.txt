@@ -1,0 +1,2 @@
+Error: File not found: /nonexistent/file.xls
+Exit code: 1

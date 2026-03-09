@@ -1,0 +1,2 @@
+Error: Missing credentials. Set GARMIN_EMAIL and GARMIN_PASSWORD environment variables.
+Exit code: 1

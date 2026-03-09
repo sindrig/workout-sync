@@ -681,7 +681,7 @@ Max Concurrent: 3 (Wave 1)
   - Files: `workout_sync/garmin_client.py`
   - Pre-commit: `uv run python -c "from workout_sync.garmin_client import GarminClient; print('OK')"`
 
-- [ ] 5. CLI Entry Point (argparse + glue + dry-run)
+- [x] 5. CLI Entry Point (argparse + glue + dry-run)
 
   **What to do**:
   - Implement `workout_sync/cli.py` with `main()` function
