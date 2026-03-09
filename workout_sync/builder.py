@@ -26,20 +26,33 @@ RUNNING_SPORT = {"sportTypeId": 1, "sportTypeKey": "running"}
 STRENGTH_SPORT = {"sportTypeId": 4, "sportTypeKey": "strength_training"}
 
 # ---------------------------------------------------------------------------
-# Pace targets (hardcoded per coach's legend)
+# Garmin ExecutableStepDTO constants
 # ---------------------------------------------------------------------------
-PACE_TARGETS: dict[str, str] = {
-    "ról": "5:15",
-    "jafnt": "4:50",
+STEP_TYPES = {
+    "warmup": {"stepTypeId": 1, "stepTypeKey": "warmup"},
+    "cooldown": {"stepTypeId": 2, "stepTypeKey": "cooldown"},
+    "interval": {"stepTypeId": 3, "stepTypeKey": "interval"},
+    "recovery": {"stepTypeId": 4, "stepTypeKey": "recovery"},
 }
 
-# Pace tolerance: ±10 seconds around target
-PACE_TOLERANCE_SEC = 10
+END_CONDITIONS = {
+    "lap.button": {"conditionTypeId": 1, "conditionTypeKey": "lap.button"},
+    "distance": {"conditionTypeId": 3, "conditionTypeKey": "distance"},
+}
 
-# ---------------------------------------------------------------------------
-# Workout type → step template config
+TARGET_TYPES = {
+    "no.target": {"workoutTargetTypeId": 1, "workoutTargetTypeKey": "no.target"},
+    "pace.zone": {"workoutTargetTypeId": 6, "workoutTargetTypeKey": "pace.zone"},
+}
+
+# Pace targets: (fast_pace, slow_pace) as "M:SS" per km
+# Counterintuitive: fast = fewer sec/km = higher m/s, slow = more sec/km = lower m/s
+PACE_TARGETS: dict[str, tuple[str, str]] = {
+    "ról": ("5:04", "6:05"),
+    "jafnt": ("4:30", "5:10"),
+}
+
 # warmup_km, cooldown_km (active_km = total - warmup - cooldown)
-# ---------------------------------------------------------------------------
 STEP_TEMPLATES: dict[str, dict] = {
     "ról": {"warmup_km": 1.0, "cooldown_km": 1.0},
     "samæfing": {"warmup_km": 2.0, "cooldown_km": 2.0},
@@ -49,112 +62,72 @@ STEP_TEMPLATES: dict[str, dict] = {
 }
 
 
-# ---------------------------------------------------------------------------
-# Pace conversion
-# ---------------------------------------------------------------------------
-def pace_str_to_ms(pace: str) -> tuple[float, float]:
-    """Convert pace string "M:SS" per km to (low_ms, high_ms) in m/s.
-
-    Returns a target range of ±PACE_TOLERANCE_SEC around the given pace.
-
-    The *slower* pace (more seconds/km) yields a *lower* m/s value and the
-    *faster* pace yields a *higher* m/s value.
+def pace_range_to_ms(fast_pace: str, slow_pace: str) -> tuple[float, float]:
+    """Convert pace range to (slow_ms, fast_ms) in m/s.
 
     Garmin convention: targetValueOne = slow end, targetValueTwo = fast end.
-
-    Example:
-        >>> pace_str_to_ms("5:15")  # 5:15/km ± 10s → 5:05-5:25
-        (3.08..., 3.28...)
     """
-    parts = pace.split(":")
-    total_sec = int(parts[0]) * 60 + int(parts[1])
 
-    slow_sec = total_sec + PACE_TOLERANCE_SEC  # slower = more sec/km
-    fast_sec = total_sec - PACE_TOLERANCE_SEC  # faster = fewer sec/km
+    def _to_sec(pace: str) -> int:
+        parts = pace.split(":")
+        return int(parts[0]) * 60 + int(parts[1])
 
-    low_ms = 1000.0 / slow_sec  # slower pace → lower m/s
-    high_ms = 1000.0 / fast_sec  # faster pace → higher m/s
+    slow_sec = _to_sec(slow_pace)
+    fast_sec = _to_sec(fast_pace)
 
-    return (round(low_ms, 2), round(high_ms, 2))
+    slow_ms = 1000.0 / slow_sec
+    fast_ms = 1000.0 / fast_sec
+
+    return (round(slow_ms, 4), round(fast_ms, 4))
 
 
-# ---------------------------------------------------------------------------
-# Step helpers
-# ---------------------------------------------------------------------------
-def warmup_step(distance_km: float, step_order: int = 1) -> dict:
-    """Build a warmup step with the given distance (no pace target)."""
-    return {
-        "type": "WorkoutStep",
+def _make_step(
+    step_type_key: str,
+    step_order: int,
+    end_condition_key: str = "distance",
+    end_condition_value: float | None = None,
+    pace_target: tuple[str, str] | None = None,
+) -> dict:
+    """Build a single Garmin ExecutableStepDTO."""
+    step: dict = {
+        "type": "ExecutableStepDTO",
         "stepOrder": step_order,
-        "intensity": "WARMUP",
-        "durationType": "DISTANCE",
-        "durationValue": distance_km * 1000,  # convert km → meters
-        "targetType": "NO_TARGET",
-        "targetValueOne": None,
-        "targetValueTwo": None,
+        "stepType": {**STEP_TYPES[step_type_key]},
+        "endCondition": {**END_CONDITIONS[end_condition_key]},
+        "endConditionValue": end_condition_value,
+        "targetType": {**TARGET_TYPES["no.target"]},
     }
+
+    if pace_target:
+        slow_ms, fast_ms = pace_range_to_ms(pace_target[0], pace_target[1])
+        step["targetType"] = {**TARGET_TYPES["pace.zone"]}
+        step["targetValueOne"] = slow_ms
+        step["targetValueTwo"] = fast_ms
+
+    return step
+
+
+def warmup_step(distance_km: float, step_order: int = 1) -> dict:
+    return _make_step("warmup", step_order, "distance", distance_km * 1000)
 
 
 def active_step(
     distance_km: float,
     step_order: int = 2,
-    pace_target: str | None = None,
-    intensity: str = "ACTIVE",
+    pace_target: tuple[str, str] | None = None,
+    step_type_key: str = "interval",
 ) -> dict:
-    """Build an active/interval step with optional pace target.
-
-    Args:
-        distance_km: Distance in kilometers.
-        step_order: 1-indexed position within the segment.
-        pace_target: Optional pace string like "5:15" (min:sec per km).
-        intensity: Step intensity — "ACTIVE" or "INTERVAL".
-    """
-    step: dict = {
-        "type": "WorkoutStep",
-        "stepOrder": step_order,
-        "intensity": intensity,
-        "durationType": "DISTANCE",
-        "durationValue": distance_km * 1000,
-        "targetType": "NO_TARGET",
-        "targetValueOne": None,
-        "targetValueTwo": None,
-    }
-
-    if pace_target:
-        low_ms, high_ms = pace_str_to_ms(pace_target)
-        step["targetType"] = "PACE"
-        step["targetValueOne"] = low_ms
-        step["targetValueTwo"] = high_ms
-
-    return step
+    return _make_step(
+        step_type_key, step_order, "distance", distance_km * 1000, pace_target
+    )
 
 
 def cooldown_step(distance_km: float, step_order: int = 3) -> dict:
-    """Build a cooldown step with the given distance (no pace target)."""
-    return {
-        "type": "WorkoutStep",
-        "stepOrder": step_order,
-        "intensity": "COOLDOWN",
-        "durationType": "DISTANCE",
-        "durationValue": distance_km * 1000,
-        "targetType": "NO_TARGET",
-        "targetValueOne": None,
-        "targetValueTwo": None,
-    }
+    return _make_step("cooldown", step_order, "distance", distance_km * 1000)
 
 
 def _strength_step(step_order: int = 1) -> dict:
-    """Build a strength training step using LAP_BUTTON_PRESS duration."""
-    return {
-        "type": "WorkoutStep",
-        "stepOrder": step_order,
-        "intensity": "ACTIVE",
-        "durationType": "LAP_BUTTON_PRESS",
-        "durationValue": None,
-        "targetType": "NO_TARGET",
-        "targetValueOne": None,
-        "targetValueTwo": None,
-    }
+    return _make_step("interval", step_order, "lap.button")
 
 
 # ---------------------------------------------------------------------------
@@ -164,30 +137,19 @@ def _build_running_steps(
     workout: Workout,
     warmup_km: float,
     cooldown_km: float,
-    pace_target: str | None = None,
-    active_intensity: str = "ACTIVE",
+    pace_target: tuple[str, str] | None = None,
 ) -> list[dict]:
-    """Build warmup → active → cooldown steps for a running workout.
-
-    Ensures all distances are positive. If total distance is too small for
-    warmup + cooldown, the warmup and cooldown are scaled down proportionally.
-    """
     total_m = workout.distance_km * 1000
 
-    # Guard: ensure no negative active distance
     min_padding = warmup_km + cooldown_km
     if workout.distance_km <= min_padding:
-        # Scale warmup/cooldown proportionally to fit
         ratio = workout.distance_km / min_padding if min_padding > 0 else 0
         warmup_km = round(warmup_km * ratio, 2)
         cooldown_km = round(cooldown_km * ratio, 2)
 
     warmup_m = warmup_km * 1000
     cooldown_m = cooldown_km * 1000
-    active_m = total_m - warmup_m - cooldown_m
-
-    # Final safety: clamp to zero
-    active_m = max(active_m, 0)
+    active_m = max(total_m - warmup_m - cooldown_m, 0)
 
     steps: list[dict] = []
     order = 1
@@ -198,12 +160,7 @@ def _build_running_steps(
 
     if active_m > 0:
         steps.append(
-            active_step(
-                active_m / 1000,
-                step_order=order,
-                pace_target=pace_target,
-                intensity=active_intensity,
-            )
+            active_step(active_m / 1000, step_order=order, pace_target=pace_target)
         )
         order += 1
 
@@ -214,53 +171,32 @@ def _build_running_steps(
 
 
 def _build_steps(workout: Workout) -> list[dict]:
-    """Dispatch to the correct step builder based on workout_type."""
     wtype = workout.workout_type.lower().strip()
 
-    # --- styrktaræfing (strength) ---
     if wtype == "styrktaræfing":
         return [_strength_step()]
 
-    # --- Types with defined warmup/cooldown templates ---
     if wtype in STEP_TEMPLATES:
         tmpl = STEP_TEMPLATES[wtype]
         pace = PACE_TARGETS.get(wtype)
-
-        # hraðaæf uses INTERVAL intensity for the active portion
-        intensity = "INTERVAL" if wtype == "hraðaæf" else "ACTIVE"
-
         return _build_running_steps(
             workout,
             warmup_km=tmpl["warmup_km"],
             cooldown_km=tmpl["cooldown_km"],
             pace_target=pace,
-            active_intensity=intensity,
         )
 
-    # --- Fallback: "other" — single active step, full distance, no target ---
     if workout.distance_km > 0:
         return [active_step(workout.distance_km, step_order=1)]
-    return [_strength_step()]  # Zero-distance unknown → lap button press
+    return [_strength_step()]
 
 
 # ---------------------------------------------------------------------------
 # Main builder
 # ---------------------------------------------------------------------------
 def build_workout_json(workout: Workout) -> dict:
-    """Convert a parsed Workout into Garmin Connect workout JSON.
-
-    Returns:
-        A dict matching the Garmin Connect workout upload schema, ready to be
-        serialised to JSON and passed to ``garminconnect.upload_workout()``.
-    """
     wtype = workout.workout_type.lower().strip()
-
-    # Pick sport type
-    if wtype == "styrktaræfing":
-        sport = {**STRENGTH_SPORT}
-    else:
-        sport = {**RUNNING_SPORT}
-
+    sport = {**STRENGTH_SPORT} if wtype == "styrktaræfing" else {**RUNNING_SPORT}
     steps = _build_steps(workout)
 
     return {

@@ -65,23 +65,29 @@ def _dry_run_flow(workouts: list):
             f"{w.date.strftime('%Y-%m-%d')} ({w.day_name}) {w.workout_type}: {w.description} [{w.distance_km} km]"
         )
         for step in steps:
-            step_name = step["intensity"].capitalize()
-            dist_m = step.get("durationValue", 0)
-            dist_km = dist_m / 1000.0 if dist_m else 0.0
+            step_name = step["stepType"]["stepTypeKey"].capitalize()
+            end_cond = step["endCondition"]["conditionTypeKey"]
 
-            if step["targetType"] == "PACE":
-                low_ms = step["targetValueOne"]
-                high_ms = step["targetValueTwo"]
-                sec_per_km_low = 1000.0 / high_ms  # faster = higher m/s
-                sec_per_km_high = 1000.0 / low_ms  # slower = lower m/s
-                min_low = int(sec_per_km_low // 60)
-                sec_low = int(sec_per_km_low % 60)
-                min_high = int(sec_per_km_high // 60)
-                sec_high = int(sec_per_km_high % 60)
+            if end_cond == "distance":
+                dist_km = (step.get("endConditionValue") or 0) / 1000.0
+            else:
+                dist_km = 0.0
+
+            target_key = step["targetType"]["workoutTargetTypeKey"]
+
+            if target_key == "pace.zone":
+                slow_ms = step["targetValueOne"]
+                fast_ms = step["targetValueTwo"]
+                sec_per_km_fast = 1000.0 / fast_ms
+                sec_per_km_slow = 1000.0 / slow_ms
+                min_fast = int(round(sec_per_km_fast) // 60)
+                sec_fast = int(round(sec_per_km_fast) % 60)
+                min_slow = int(round(sec_per_km_slow) // 60)
+                sec_slow = int(round(sec_per_km_slow) % 60)
                 print(
-                    f"  → {step_name}: {dist_km:.1f} km @ ~{min_low}:{sec_low:02d}-{min_high}:{sec_high:02d}/km"
+                    f"  → {step_name}: {dist_km:.1f} km @ ~{min_fast}:{sec_fast:02d}-{min_slow}:{sec_slow:02d}/km"
                 )
-            elif step["durationType"] == "LAP_BUTTON_PRESS":
+            elif end_cond == "lap.button":
                 print(f"  → {step_name}: open-ended")
             else:
                 print(f"  → {step_name}: {dist_km:.1f} km")
