@@ -2,21 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
-
-@dataclass
-class Workout:
-    """Workout data parsed from the training plan spreadsheet.
-
-    This is a local definition for type hints. The canonical Workout
-    dataclass will be provided by the parser module (Task 2).
-    """
-
-    date: str
-    workout_type: str  # ról, samæfing, hraðaæf, jafnt, styrktaræfing, fartleikur
-    distance_km: float
-    description: str
+from .parser import Workout
 
 
 # ---------------------------------------------------------------------------

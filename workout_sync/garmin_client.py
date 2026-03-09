@@ -21,11 +21,11 @@ class GarminClient:
 
     def login(self):
         token_dir = GARTH_TOKEN_DIR
+        Path(token_dir).mkdir(parents=True, exist_ok=True)
         try:
             self.client.login(tokenstore=token_dir)
         except Exception:
             self.client.login()
-        Path(token_dir).mkdir(parents=True, exist_ok=True)
         self.client.garth.dump(token_dir)
 
     def delete_workouts_by_prefix(self, prefix: str = "[WS]") -> int:
@@ -41,6 +41,10 @@ class GarminClient:
                     "connectapi",
                     f"/workout-service/workout/{workout_id}",
                     api=True,
+                    headers={
+                        "Referer": "https://connect.garmin.com/modern/workouts",
+                        "nk": "NT",
+                    },
                 )
                 deleted += 1
             except Exception as e:

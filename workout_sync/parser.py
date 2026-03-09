@@ -33,13 +33,13 @@ def _classify_workout_type(description: str) -> str:
         return "hraðaæf"
     if "jafnt" in desc_lower:
         return "jafnt"
-    if "samæfing" in desc_lower:
+    if "samæf" in desc_lower:
         return "samæfing"
     if "styrktaræfing" in desc_lower:
         return "styrktaræfing"
     if "fartleikur" in desc_lower or "fartleik" in desc_lower:
         return "fartleikur"
-    if "Hlaupasería" in description:
+    if "hlaupasería" in desc_lower:
         return "samæfing"
     return "other"
 
