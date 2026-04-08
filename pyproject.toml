@@ -1,13 +1,21 @@
 [project]
 name = "workout-sync"
 version = "0.1.0"
-description = "Add your description here"
+description = "Sync workouts between XLS training plan and Garmin Connect"
 requires-python = ">=3.13"
 dependencies = [
     "garminconnect>=0.2.38",
+    "openpyxl>=3.1.0",
     "python-dotenv>=1.2.2",
     "xlrd>=2.0.2",
 ]
 
 [project.scripts]
 workout-sync = "workout_sync.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+package = true

@@ -20,6 +20,17 @@ class Workout:
     notes: str
 
 
+@dataclass
+class WorkoutRow:
+    """A date row in the XLS, including its row index for write-back."""
+
+    row_idx: int
+    date: datetime.date
+    day_name: str
+    description: str
+    distance_km: float
+
+
 def _classify_workout_type(description: str) -> str:
     """Classify workout type from Icelandic description text.
 
@@ -101,3 +112,40 @@ def parse_xls(filepath: str) -> list[Workout]:
     workouts.sort(key=lambda w: w.date)
 
     return workouts
+
+
+def parse_xls_rows(filepath: str) -> list[WorkoutRow]:
+    """Parse all date rows from the XLS, unfiltered, with row indices for write-back."""
+    wb = xlrd.open_workbook(filepath)
+    sheet = wb.sheet_by_index(0)
+
+    rows: list[WorkoutRow] = []
+
+    for row_idx in range(8, sheet.nrows):
+        if sheet.cell_type(row_idx, 0) != xlrd.XL_CELL_DATE:
+            continue
+
+        date_value = float(sheet.cell_value(row_idx, 0))
+        date_tuple = xlrd.xldate_as_tuple(date_value, wb.datemode)
+        date = datetime.date(*date_tuple[:3])
+
+        day_name = str(sheet.cell_value(row_idx, 1)).strip()
+        description = str(sheet.cell_value(row_idx, 2)).strip()
+        distance_km = (
+            float(sheet.cell_value(row_idx, 3))
+            if sheet.cell_type(row_idx, 3) == xlrd.XL_CELL_NUMBER
+            else 0.0
+        )
+
+        rows.append(
+            WorkoutRow(
+                row_idx=row_idx,
+                date=date,
+                day_name=day_name,
+                description=description,
+                distance_km=distance_km,
+            )
+        )
+
+    rows.sort(key=lambda r: r.date)
+    return rows

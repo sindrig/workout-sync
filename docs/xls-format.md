@@ -17,8 +17,8 @@ The input file is an Icelandic coach's training plan exported from Excel.
 | 0      | Date    | Date (ctype 3) for workout rows, text/empty for summaries |
 | 1      | Day name (Icelandic: mán, þri, mið, fim, fös, lau, sun) | Text |
 | 2      | Description (workout type + location/notes) | Text |
-| 3      | Distance in km | Number (ctype 2), empty for rest/strength |
-| 4      | (unused) | — |
+| 3      | Distance in km (planned) | Number (ctype 2), empty for rest/strength |
+| 4      | km í raun (actual distance) | Number — written by `download` command |
 | 5      | Notes | Text |
 
 ## Row Filtering

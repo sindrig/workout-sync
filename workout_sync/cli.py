@@ -8,34 +8,70 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from .builder import build_workout_json
+from .downloader import fetch_actual_distances, round_to_increment, write_actual_km
 from .garmin_client import GarminClient
-from .parser import parse_xls
+from .parser import parse_xls, parse_xls_rows
 
 
 def main():
-    """Entry point for the CLI."""
     parser = argparse.ArgumentParser(
         prog="workout-sync",
-        description="Upload workout plan from XLS to Garmin Connect",
+        description="Sync workouts between XLS training plan and Garmin Connect",
     )
-    parser.add_argument("xls_file", type=str, help="Path to the XLS workout plan file")
-    parser.add_argument(
+    subparsers = parser.add_subparsers(dest="command")
+
+    upload_parser = subparsers.add_parser(
+        "upload", help="Upload workout plan from XLS to Garmin Connect"
+    )
+    upload_parser.add_argument(
+        "xls_file", type=str, help="Path to the XLS workout plan file"
+    )
+    upload_parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Parse and display workouts without uploading",
     )
+
+    download_parser = subparsers.add_parser(
+        "download",
+        help="Pull actual distances from Garmin Connect into the XLS",
+    )
+    download_parser.add_argument(
+        "xls_file", type=str, help="Path to the XLS workout plan file"
+    )
+    download_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would be written without modifying the file",
+    )
+    download_parser.add_argument(
+        "--increment",
+        type=float,
+        default=0.5,
+        help="Distance rounding increment in km (default: 0.5)",
+    )
+
     args = parser.parse_args()
 
-    # Validate XLS file exists
+    # Default to upload when no subcommand given (backward compat)
+    if args.command is None:
+        args = upload_parser.parse_args()
+        args.command = "upload"
+
     xls_path = Path(args.xls_file).expanduser()
     if not xls_path.exists():
         print(f"Error: File not found: {args.xls_file}", file=sys.stderr)
         sys.exit(1)
 
-    # Load .env if present
     load_dotenv()
 
-    # Parse workouts
+    if args.command == "upload":
+        _upload_command(xls_path, args)
+    elif args.command == "download":
+        _download_command(xls_path, args)
+
+
+def _upload_command(xls_path: Path, args: argparse.Namespace):
     try:
         workouts = parse_xls(str(xls_path))
     except Exception as e:
@@ -47,13 +83,12 @@ def main():
         sys.exit(1)
 
     if args.dry_run:
-        _dry_run_flow(workouts)
+        _upload_dry_run(workouts)
     else:
-        _normal_flow(workouts)
+        _upload_live(workouts)
 
 
-def _dry_run_flow(workouts: list):
-    """Dry-run mode: parse XLS, build JSONs, print structured summary."""
+def _upload_dry_run(workouts: list):
     print("=== DRY RUN ===\n")
 
     total_km = 0.0
@@ -97,9 +132,7 @@ def _dry_run_flow(workouts: list):
     print(f"\nTotal: {len(workouts)} workouts, {total_km:.1f} km")
 
 
-def _normal_flow(workouts: list):
-    """Normal flow: load env, login, delete existing, upload + schedule all."""
-    # Load credentials from environment
+def _upload_live(workouts: list):
     email = os.environ.get("GARMIN_EMAIL")
     password = os.environ.get("GARMIN_PASSWORD")
 
@@ -112,21 +145,18 @@ def _normal_flow(workouts: list):
 
     print("=== GARMIN CONNECT UPLOAD ===\n")
 
-    # Build (workout_json, date_str) tuples
     workouts_to_upload = []
     for w in workouts:
         w_json = build_workout_json(w)
         date_str = w.date.strftime("%Y-%m-%d")
         workouts_to_upload.append((w_json, date_str))
 
-    # Print summary
     print(f"Plan: {len(workouts)} workouts")
     for w_json, date_str in workouts_to_upload:
         name = w_json.get("workoutName", "?")
         print(f"  {date_str} {name}")
     print()
 
-    # Initialize client and login
     try:
         print("Logging in to Garmin Connect...")
         client = GarminClient(email, password)
@@ -136,7 +166,6 @@ def _normal_flow(workouts: list):
         print(f"Error authenticating to Garmin Connect: {e}", file=sys.stderr)
         sys.exit(1)
 
-    # Delete existing [WS] workouts
     try:
         client.delete_workouts_by_prefix("[WS]")
         print()
@@ -144,9 +173,86 @@ def _normal_flow(workouts: list):
         print(f"Warning: Failed to delete existing workouts: {e}", file=sys.stderr)
         print()
 
-    # Upload and schedule all
     try:
         client.upload_all(workouts_to_upload)
     except Exception as e:
         print(f"Error uploading workouts: {e}", file=sys.stderr)
         sys.exit(1)
+
+
+def _download_command(xls_path: Path, args: argparse.Namespace):
+    try:
+        rows = parse_xls_rows(str(xls_path))
+    except Exception as e:
+        print(f"Error parsing XLS file: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    if not rows:
+        print("No workout rows found in the XLS file.", file=sys.stderr)
+        sys.exit(1)
+
+    email = os.environ.get("GARMIN_EMAIL")
+    password = os.environ.get("GARMIN_PASSWORD")
+
+    if not email or not password:
+        print(
+            "Error: Missing credentials. Set GARMIN_EMAIL and GARMIN_PASSWORD environment variables.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    try:
+        print("Logging in to Garmin Connect...")
+        client = GarminClient(email, password)
+        client.login()
+        print("✓ Login successful\n")
+    except Exception as e:
+        print(f"Error authenticating to Garmin Connect: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    print("Fetching activities from Garmin Connect...")
+    try:
+        distances = fetch_actual_distances(client, rows)
+    except Exception as e:
+        print(f"Error fetching activities: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    if not distances:
+        print("No running activities found for the plan dates.")
+        return
+
+    increment = args.increment
+
+    print(
+        f"\n=== {'DRY RUN — ' if args.dry_run else ''}KM Í RAUN (increment: {increment} km) ===\n"
+    )
+
+    matched = 0
+    for row in rows:
+        raw_km = distances.get(row.date)
+        if raw_km is None:
+            continue
+        rounded = round_to_increment(raw_km, increment)
+        delta = rounded - row.distance_km if row.distance_km else None
+        delta_str = f" (Δ {delta:+.1f})" if delta is not None else ""
+        print(
+            f"  {row.date.isoformat()} ({row.day_name}) {row.description[:40]:<40}  "
+            f"plan: {row.distance_km:5.1f} km  actual: {rounded:5.1f} km{delta_str}"
+        )
+        matched += 1
+
+    unmatched = len(rows) - matched
+    print(f"\n{matched} day(s) with activity data, {unmatched} without.")
+
+    if args.dry_run:
+        print("\nDry run — no files modified.")
+        return
+
+    try:
+        written = write_actual_km(xls_path, rows, distances, increment)
+    except Exception as e:
+        print(f"Error writing to XLS: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    xlsx_path = xls_path.with_suffix(".xlsx")
+    print(f"\n✓ Wrote {len(written)} value(s) to {xlsx_path}")

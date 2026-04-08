@@ -1,4 +1,4 @@
-"""Garmin Connect API client for uploading, scheduling, and deleting workouts."""
+"""Garmin Connect API client for uploading, scheduling, deleting workouts, and fetching activities."""
 
 from __future__ import annotations
 
@@ -86,6 +86,23 @@ class GarminClient:
         )
 
         return result
+
+    def get_activities_by_date(self, start_date: str, end_date: str) -> list[dict]:
+        """Fetch running activities between two dates (inclusive).
+
+        Args:
+            start_date: YYYY-MM-DD format.
+            end_date: YYYY-MM-DD format.
+
+        Returns:
+            List of activity dicts. Distance is in meters.
+        """
+        activities: list[dict] = self.client.get_activities_by_date(
+            startdate=start_date,
+            enddate=end_date,
+            activitytype="running",
+        )
+        return activities
 
     def upload_all(self, workouts: list[tuple[dict, str]]):
         uploaded = 0

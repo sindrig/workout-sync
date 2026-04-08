@@ -4,7 +4,7 @@
 
 - Python 3.13+
 - [uv](https://docs.astral.sh/uv/) package manager
-- Garmin Connect account (for upload mode)
+- Garmin Connect account
 
 ## Install Dependencies
 
@@ -12,12 +12,14 @@
 uv sync
 ```
 
-## Dry Run (Preview)
+## Upload (push plan to Garmin)
+
+### Dry Run (Preview)
 
 Parse the XLS and print a structured summary without touching Garmin:
 
 ```bash
-uv run python -m workout_sync --dry-run ~/Downloads/Sindri\ Guðmunds\ -\ mars.xls
+uv run workout-sync upload --dry-run ~/Downloads/Sindri\ Guðmunds\ -\ mars.xls
 ```
 
 Example output:
@@ -38,7 +40,7 @@ Example output:
 Total: 24 workouts, 254.0 km
 ```
 
-## Upload to Garmin Connect
+### Live Upload
 
 Set credentials:
 
@@ -47,10 +49,10 @@ cp .env.example .env
 # Edit .env with your Garmin email and password
 ```
 
-Run without `--dry-run`:
+Run:
 
 ```bash
-uv run python -m workout_sync ~/Downloads/Sindri\ Guðmunds\ -\ mars.xls
+uv run workout-sync upload ~/Downloads/Sindri\ Guðmunds\ -\ mars.xls
 ```
 
 This will:
@@ -58,6 +60,64 @@ This will:
 2. Log in to Garmin Connect (prompts for MFA if enabled)
 3. Delete all existing `[WS]`-prefixed workouts (idempotent wipe)
 4. Upload each workout and schedule it on the calendar date
+
+### Backward Compatibility
+
+Running without a subcommand defaults to `upload`:
+
+```bash
+uv run workout-sync ~/Downloads/Sindri\ Guðmunds\ -\ mars.xls
+```
+
+## Download (pull actual distances from Garmin)
+
+Fetch completed running activities from Garmin Connect and write the actual distances into the "km í raun" column (column 4) of the XLS file.
+
+### Dry Run
+
+```bash
+uv run workout-sync download --dry-run ~/Downloads/Sindri\ Guðmunds\ -\ mars.xls
+```
+
+Example output:
+
+```
+=== DRY RUN — KM Í RAUN (increment: 0.5 km) ===
+
+  2026-03-10 (þri) ról                                       plan:  10.0 km  actual:  10.0 km (Δ +0.0)
+  2026-03-11 (mið) samæfing                                   plan:  12.0 km  actual:  11.5 km (Δ -0.5)
+...
+
+14 day(s) with activity data, 10 without.
+
+Dry run — no files modified.
+```
+
+### Live Download
+
+```bash
+uv run workout-sync download ~/Downloads/Sindri\ Guðmunds\ -\ mars.xls
+```
+
+This will:
+1. Parse the XLS to find all workout date rows
+2. Log in to Garmin Connect
+3. Fetch running activities for the date range
+4. Sum multiple activities on the same date
+5. Round distances to the nearest increment (default 0.5 km)
+6. Write values into column 4 and save as `.xlsx`
+
+### Custom Increment
+
+Change the rounding increment (default: 0.5 km):
+
+```bash
+uv run workout-sync download --increment 1.0 ~/Downloads/Sindri\ Guðmunds\ -\ mars.xls
+```
+
+### Output Format
+
+The download command saves as `.xlsx` (not `.xls`) because `openpyxl` writes modern Excel format. If the `.xlsx` already exists, it updates that file. Otherwise it reads from the `.xls` and saves a new `.xlsx`.
 
 ## MFA
 
