@@ -117,7 +117,7 @@ uv run workout-sync download --increment 1.0 ~/Downloads/Sindri\ Guðmunds\ -\ m
 
 ### Output Format
 
-The download command saves as `.xlsx` (not `.xls`) because `openpyxl` writes modern Excel format. If the `.xlsx` already exists, it updates that file. Otherwise it reads from the `.xls` and saves a new `.xlsx`.
+The download command edits the `.xls` file in-place, preserving all existing formatting and formulas. A copy of the original workbook is made via `xlutils`, the "km í raun" column is updated, and the file is saved back to the same path.
 
 ## MFA
 

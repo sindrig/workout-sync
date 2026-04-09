@@ -22,7 +22,7 @@ Download:
 1. **parser.py** reads the XLS with `xlrd`, extracts rows 8+ as `Workout` dataclasses (upload) or `WorkoutRow` structs (download)
 2. **builder.py** converts each `Workout` into Garmin Connect workout JSON (warmup/active/cooldown steps with pace targets)
 3. **garmin_client.py** authenticates via `python-garminconnect` + `garth`, uploads workouts or fetches activities
-4. **downloader.py** matches Garmin activities to XLS date rows, rounds distances, writes via `openpyxl`
+4. **downloader.py** matches Garmin activities to XLS date rows, rounds distances, writes via `xlutils`
 5. **cli.py** orchestrates both flows via `upload` and `download` subcommands
 
 ## File Structure
@@ -63,7 +63,7 @@ workout_sync/
 ### downloader.py
 - `fetch_actual_distances()`: calls Garmin API, sums multiple activities per date
 - `round_to_increment()`: rounds distances to configurable increment (default 0.5 km)
-- `write_actual_km()`: writes rounded values to column 4 via `openpyxl`, saves as `.xlsx`
+- `write_actual_km()`: writes rounded values to column 4 via `xlutils`, edits `.xls` in-place
 
 ### cli.py
 - `upload` subcommand: parse + build + login + delete old + upload + schedule (or `--dry-run`)
@@ -75,7 +75,7 @@ workout_sync/
 
 - No web server, no database, no GUI
 - No generic/configurable parser — hardcoded to this exact XLS format
-- No pandas — xlrd for reading, openpyxl for writing
+- No pandas — xlrd for reading, xlutils/xlwt for writing
 - No test framework
 - No over-engineered abstractions
-- Minimal dependencies: garminconnect, xlrd, openpyxl, python-dotenv
+- Minimal dependencies: garminconnect, xlrd, xlutils, xlwt, python-dotenv

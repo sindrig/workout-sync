@@ -254,5 +254,4 @@ def _download_command(xls_path: Path, args: argparse.Namespace):
         print(f"Error writing to XLS: {e}", file=sys.stderr)
         sys.exit(1)
 
-    xlsx_path = xls_path.with_suffix(".xlsx")
-    print(f"\n✓ Wrote {len(written)} value(s) to {xlsx_path}")
+    print(f"\n✓ Wrote {len(written)} value(s) to {xls_path}")

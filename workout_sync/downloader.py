@@ -6,15 +6,13 @@ import datetime
 from collections import defaultdict
 from pathlib import Path
 
-from openpyxl import Workbook, load_workbook
-
 import xlrd
+from xlutils.copy import copy as xlutils_copy
 
 from .garmin_client import GarminClient
 from .parser import WorkoutRow
 
-# "km í raun" lives in column 4 (0-indexed in xlrd, 1-indexed in openpyxl → col 5)
-_ACTUAL_KM_COL_OPENPYXL = 5  # openpyxl is 1-indexed
+_ACTUAL_KM_COL = 4  # 0-indexed, column E in the spreadsheet
 
 
 def round_to_increment(value: float, increment: float) -> float:
@@ -61,47 +59,16 @@ def fetch_actual_distances(
     return _build_date_distance_map(activities)
 
 
-def _convert_xls_to_xlsx(xls_path: Path) -> Workbook:
-    rd = xlrd.open_workbook(str(xls_path))
-    sheet = rd.sheet_by_index(0)
-
-    wb = Workbook()
-    ws = wb.active
-    assert ws is not None
-
-    for row_idx in range(sheet.nrows):
-        for col_idx in range(sheet.ncols):
-            cell_type = sheet.cell_type(row_idx, col_idx)
-            value = sheet.cell_value(row_idx, col_idx)
-
-            if cell_type == xlrd.XL_CELL_DATE:
-                date_tuple = xlrd.xldate_as_tuple(float(value), rd.datemode)
-                value = datetime.datetime(*date_tuple)
-            elif cell_type == xlrd.XL_CELL_EMPTY:
-                continue
-
-            ws.cell(row=row_idx + 1, column=col_idx + 1, value=value)
-
-    return wb
-
-
 def write_actual_km(
     xls_path: Path,
     rows: list[WorkoutRow],
     distances: dict[datetime.date, float],
     increment: float,
 ) -> list[tuple[WorkoutRow, float]]:
-    """Write rounded distances into column 4. Saves as .xlsx (openpyxl only writes xlsx)."""
-    xlsx_path = xls_path.with_suffix(".xlsx")
-
-    if xlsx_path.exists():
-        wb = load_workbook(str(xlsx_path))
-    else:
-        wb = _convert_xls_to_xlsx(xls_path)
-
-    ws = wb.active
-    if ws is None:
-        raise ValueError(f"No active sheet in {xls_path}")
+    # xlutils.copy preserves formatting; xlrd must open with formatting_info=True
+    rb = xlrd.open_workbook(str(xls_path), formatting_info=True)
+    wb = xlutils_copy(rb)
+    ws = wb.get_sheet(0)
 
     written: list[tuple[WorkoutRow, float]] = []
 
@@ -111,9 +78,8 @@ def write_actual_km(
             continue
 
         rounded = round_to_increment(raw_km, increment)
-        # openpyxl rows are 1-indexed; xlrd row_idx is 0-indexed → +1
-        ws.cell(row=row.row_idx + 1, column=_ACTUAL_KM_COL_OPENPYXL, value=rounded)
+        ws.write(row.row_idx, _ACTUAL_KM_COL, rounded)
         written.append((row, rounded))
 
-    wb.save(str(xlsx_path))
+    wb.save(str(xls_path))
     return written
