@@ -7,123 +7,22 @@ import struct
 from collections import defaultdict
 from pathlib import Path
 
-import xlrd
-import xlwt
-from xlutils.copy import copy as xlutils_copy
+import olefile
+from xlwt.CompoundDoc import XlsDoc
 
 from .garmin_client import GarminClient
 from .parser import WorkoutRow
 
 _ACTUAL_KM_COL = 4  # 0-indexed, column E in the spreadsheet
 
-
-def _col_letter(col_idx: int) -> str:
-    """Convert 0-based column index to Excel column letter (0→A, 3→D, 4→E)."""
-    result = ""
-    idx = col_idx
-    while True:
-        result = chr(ord("A") + idx % 26) + result
-        idx = idx // 26 - 1
-        if idx < 0:
-            break
-    return result
-
-
-def _extract_formulas(xls_path: Path) -> list[tuple[int, int, str]]:
-    """Extract formula cells from XLS BIFF records.
-
-    Returns list of (row, col, formula_text) for every FORMULA record found
-    in sheet 0.  Only SUM() with a single area argument is decoded — that
-    covers the weekly-total rows in the coach's spreadsheet.
-    """
-    try:
-        import olefile
-
-        ole = olefile.OleFileIO(str(xls_path))  # type: ignore[arg-type]
-        try:
-            data = ole.openstream("Workbook").read()
-        finally:
-            ole.close()
-    except ImportError:
-        import io
-
-        doc = xlrd.compdoc.CompDoc(str(xls_path), logfile=io.StringIO())  # type: ignore[attr-defined]
-        data = doc.get_named_stream("Workbook")
-
-    formulas: list[tuple[int, int, str]] = []
-    pos = 0
-    while pos < len(data) - 4:
-        opcode = struct.unpack("<H", data[pos : pos + 2])[0]
-        length = struct.unpack("<H", data[pos + 2 : pos + 4])[0]
-
-        if opcode == 0x0006 and length >= 22:  # FORMULA record
-            rec = data[pos + 4 : pos + 4 + length]
-            row, col = struct.unpack("<HH", rec[0:4])
-            formula_size = struct.unpack("<H", rec[20:22])[0]
-            tokens = rec[22 : 22 + formula_size]
-
-            formula_text = _decode_formula_tokens(tokens)
-            if formula_text is not None:
-                formulas.append((row, col, formula_text))
-
-        pos += 4 + length
-        if pos >= len(data):
-            break
-
-    return formulas
-
-
-def _decode_formula_tokens(tokens: bytes) -> str | None:
-    """Best-effort decode of BIFF8 formula tokens.
-
-    Handles the common case: ``SUM(<area>)`` with a single tArea2d operand,
-    encoded either via tAttrSum (optimised single-arg SUM) or tFuncVar.
-    Returns the formula string (without leading ``=``) or *None* if the
-    tokens cannot be decoded.
-    """
-    if len(tokens) < 9:
-        return None
-
-    first_token = tokens[0]
-    # tArea2d variants: 0x25 (tAreaR), 0x45 (tAreaV), 0x65 (tAreaA)
-    if first_token not in (0x25, 0x45, 0x65):
-        return None
-
-    first_row, last_row, first_col_raw, last_col_raw = struct.unpack(
-        "<HHHH", tokens[1:9]
-    )
-    first_col = first_col_raw & 0x00FF
-    last_col = last_col_raw & 0x00FF
-
-    area_ref = (
-        f"{_col_letter(first_col)}{first_row + 1}:{_col_letter(last_col)}{last_row + 1}"
-    )
-
-    rest = tokens[9:]
-    t = 0
-    while t < len(rest):
-        tid = rest[t]
-        if tid == 0x19:  # tAttr
-            if t + 1 < len(rest) and (rest[t + 1] & 0x10):
-                # tAttrSum — optimised single-arg SUM
-                return f"SUM({area_ref})"
-            t += 4  # tAttr is always 4 bytes in BIFF8
-            continue
-        if tid in (0x42, 0x62, 0x82):  # tFuncVar
-            if t + 4 <= len(rest):
-                func_idx = struct.unpack("<H", rest[t + 2 : t + 4])[0]
-                if func_idx == 4:
-                    return f"SUM({area_ref})"
-            return None
-        if tid in (0x41, 0x61, 0x81):  # tFunc
-            if t + 3 <= len(rest):
-                func_idx = struct.unpack("<H", rest[t + 1 : t + 3])[0]
-                if func_idx == 4:
-                    return f"SUM({area_ref})"
-            return None
-        break
-
-    return None
+# BIFF8 record opcodes
+_BIFF_BOF = 0x0809
+_BIFF_BOUNDSHEET = 0x0085
+_BIFF_BLANK = 0x0201
+_BIFF_NUMBER = 0x0203
+_BIFF_RK = 0x027E
+_BIFF_MULRK = 0x00BD
+_BIFF_MULBLANK = 0x00BE
 
 
 def round_to_increment(value: float, increment: float) -> float:
@@ -137,6 +36,198 @@ def round_to_increment(value: float, increment: float) -> float:
     10.5
     """
     return round(value / increment) * increment
+
+
+def _read_biff_stream(xls_path: Path) -> bytes:
+    ole = olefile.OleFileIO(str(xls_path))  # type: ignore[arg-type]
+    try:
+        return ole.openstream("Workbook").read()
+    finally:
+        ole.close()
+
+
+def _patch_biff_stream(data: bytes, edits: dict[tuple[int, int], float]) -> bytes:
+    """Patch a BIFF8 Workbook stream, replacing BLANK/MULBLANK cells with NUMBER.
+
+    Every record that is NOT a target cell is copied byte-for-byte — formulas,
+    formatting, images, everything survives untouched.  BOUNDSHEET pointers are
+    recalculated after patching so the sheet BOF offsets remain valid.
+    """
+    if not edits:
+        return data
+
+    # --- Locate structural landmarks ---
+    bof_positions: list[int] = []
+    boundsheet_positions: list[int] = []
+    pos = 0
+    while pos < len(data) - 4:
+        opcode, length = struct.unpack_from("<HH", data, pos)
+        if opcode == _BIFF_BOF:
+            bof_positions.append(pos)
+        pos += 4 + length
+
+    if len(bof_positions) < 2:
+        return data
+
+    globals_end = bof_positions[1]
+
+    # Find BOUNDSHEET records within Globals substream
+    pos = 0
+    while pos < globals_end:
+        opcode, length = struct.unpack_from("<HH", data, pos)
+        if opcode == _BIFF_BOUNDSHEET:
+            boundsheet_positions.append(pos)
+        pos += 4 + length
+
+    # --- Determine which segment (sheet) contains each edit ---
+    # Build segment boundaries: [globals_end, sheet2_bof, sheet3_bof, ..., len(data)]
+    seg_boundaries = bof_positions[1:] + [len(data)]
+    # Only patch the segment that contains target cells (typically Sheet1).
+    # For safety, figure out which sheet index each edit falls in by scanning
+    # the original data for BLANK/MULBLANK records.
+    patch_segments: set[int] = set()
+    pos = 0
+    while pos < len(data) - 4:
+        opcode, length = struct.unpack_from("<HH", data, pos)
+        rec_data = data[pos + 4 : pos + 4 + length]
+
+        seg_idx = _segment_for_offset(pos, seg_boundaries)
+
+        if opcode in (_BIFF_BLANK, _BIFF_NUMBER, _BIFF_RK) and length >= 6:
+            row, col = struct.unpack_from("<HH", rec_data)
+            if (row, col) in edits:
+                patch_segments.add(seg_idx)
+
+        elif opcode in (_BIFF_MULBLANK, _BIFF_MULRK) and length >= 6:
+            row, first_col = struct.unpack_from("<HH", rec_data)
+            last_col = struct.unpack_from("<H", rec_data, length - 2)[0]
+            for c in range(first_col, last_col + 1):
+                if (row, c) in edits:
+                    patch_segments.add(seg_idx)
+
+        pos += 4 + length
+
+    # --- Rebuild stream ---
+    output = bytearray()
+    new_bof_offsets: dict[int, int] = {}
+
+    # Copy Globals verbatim (track BOUNDSHEET output positions for fixup)
+    bs_output_positions: list[int] = []
+    pos = 0
+    while pos < globals_end:
+        opcode, length = struct.unpack_from("<HH", data, pos)
+        if opcode == _BIFF_BOUNDSHEET:
+            bs_output_positions.append(len(output))
+        output += data[pos : pos + 4 + length]
+        pos += 4 + length
+
+    # Copy each sheet segment
+    for seg_idx in range(len(seg_boundaries) - 1):
+        seg_start = seg_boundaries[seg_idx]
+        seg_end = seg_boundaries[seg_idx + 1]
+        new_bof_offsets[seg_idx] = len(output)
+
+        if seg_idx not in patch_segments:
+            output += data[seg_start:seg_end]
+            continue
+
+        # Patch this segment record by record
+        pos = seg_start
+        while pos < seg_end:
+            opcode, length = struct.unpack_from("<HH", data, pos)
+            rec_data = data[pos + 4 : pos + 4 + length]
+            rec_end = pos + 4 + length
+
+            if opcode in (_BIFF_BLANK, _BIFF_NUMBER, _BIFF_RK) and length >= 6:
+                row, col, xf_idx = struct.unpack_from("<HHH", rec_data)
+                if (row, col) in edits:
+                    output += struct.pack(
+                        "<HHHHH d",
+                        _BIFF_NUMBER,
+                        14,
+                        row,
+                        col,
+                        xf_idx,
+                        edits[(row, col)],
+                    )
+                    pos = rec_end
+                    continue
+
+            elif opcode == _BIFF_MULBLANK and length >= 6:
+                row, first_col = struct.unpack_from("<HH", rec_data)
+                last_col = struct.unpack_from("<H", rec_data, length - 2)[0]
+
+                if any((row, c) in edits for c in range(first_col, last_col + 1)):
+                    for i in range(last_col - first_col + 1):
+                        c = first_col + i
+                        xf_idx = struct.unpack_from("<H", rec_data, 4 + i * 2)[0]
+                        if (row, c) in edits:
+                            output += struct.pack(
+                                "<HHHHH d",
+                                _BIFF_NUMBER,
+                                14,
+                                row,
+                                c,
+                                xf_idx,
+                                edits[(row, c)],
+                            )
+                        else:
+                            output += struct.pack(
+                                "<HHHHH", _BIFF_BLANK, 6, row, c, xf_idx
+                            )
+                    pos = rec_end
+                    continue
+
+            elif opcode == _BIFF_MULRK and length >= 6:
+                row, first_col = struct.unpack_from("<HH", rec_data)
+                last_col = struct.unpack_from("<H", rec_data, length - 2)[0]
+
+                if any((row, c) in edits for c in range(first_col, last_col + 1)):
+                    # MULRK packs (xf_idx: 2 bytes, rk_value: 4 bytes) per cell
+                    for i in range(last_col - first_col + 1):
+                        c = first_col + i
+                        xf_idx = struct.unpack_from("<H", rec_data, 4 + i * 6)[0]
+                        if (row, c) in edits:
+                            output += struct.pack(
+                                "<HHHHH d",
+                                _BIFF_NUMBER,
+                                14,
+                                row,
+                                c,
+                                xf_idx,
+                                edits[(row, c)],
+                            )
+                        else:
+                            rk_val = struct.unpack_from("<I", rec_data, 6 + i * 6)[0]
+                            output += struct.pack(
+                                "<HHHHI", _BIFF_RK, 10, row, c, xf_idx
+                            )
+                            output += struct.pack("<I", rk_val)
+                    pos = rec_end
+                    continue
+
+            output += data[pos:rec_end]
+            pos = rec_end
+
+    # Handle the last segment (after last boundary)
+    last_seg_start = seg_boundaries[-1]
+    if last_seg_start < len(data):
+        new_bof_offsets[len(seg_boundaries) - 1] = len(output)
+        output += data[last_seg_start:]
+
+    # --- Fix BOUNDSHEET offsets ---
+    for i, bs_pos in enumerate(bs_output_positions):
+        if i < len(new_bof_offsets):
+            struct.pack_into("<L", output, bs_pos + 4, new_bof_offsets[i])
+
+    return bytes(output)
+
+
+def _segment_for_offset(pos: int, boundaries: list[int]) -> int:
+    for i, boundary in enumerate(boundaries):
+        if pos < boundary:
+            return i - 1 if i > 0 else 0
+    return len(boundaries) - 1
 
 
 def _build_date_distance_map(
@@ -176,25 +267,20 @@ def write_actual_km(
     distances: dict[datetime.date, float],
     increment: float,
 ) -> list[tuple[WorkoutRow, float]]:
-    formulas = _extract_formulas(xls_path)
-
-    rb = xlrd.open_workbook(str(xls_path), formatting_info=True)
-    wb = xlutils_copy(rb)
-    ws = wb.get_sheet(0)
-
+    edits: dict[tuple[int, int], float] = {}
     written: list[tuple[WorkoutRow, float]] = []
 
     for row in rows:
         raw_km = distances.get(row.date)
         if raw_km is None:
             continue
-
         rounded = round_to_increment(raw_km, increment)
-        ws.write(row.row_idx, _ACTUAL_KM_COL, rounded)
+        edits[(row.row_idx, _ACTUAL_KM_COL)] = rounded
         written.append((row, rounded))
 
-    for formula_row, formula_col, formula_text in formulas:
-        ws.write(formula_row, formula_col, xlwt.Formula(formula_text))
+    if edits:
+        biff = _read_biff_stream(xls_path)
+        patched = _patch_biff_stream(biff, edits)
+        XlsDoc().save(str(xls_path), patched)
 
-    wb.save(str(xls_path))
     return written
