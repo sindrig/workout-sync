@@ -101,6 +101,13 @@ def _open_sheet(filepath: str) -> _XlrdSheet | _OpenpyxlSheet:
     return _XlrdSheet(filepath)
 
 
+def _first_date_row(sheet: _XlrdSheet | _OpenpyxlSheet) -> int:
+    for row_idx in range(sheet.nrows):
+        if sheet.is_date(row_idx, 0):
+            return row_idx
+    return sheet.nrows
+
+
 def _classify_workout_type(description: str) -> str:
     """Classify workout type from Icelandic description text.
 
@@ -137,7 +144,7 @@ def parse_xls(filepath: str) -> list[Workout]:
     sheet = _open_sheet(filepath)
     workouts: list[Workout] = []
 
-    for row_idx in range(8, sheet.nrows):
+    for row_idx in range(_first_date_row(sheet), sheet.nrows):
         if not sheet.is_date(row_idx, 0):
             continue
 
@@ -172,7 +179,7 @@ def parse_xls_rows(filepath: str) -> list[WorkoutRow]:
     sheet = _open_sheet(filepath)
     rows: list[WorkoutRow] = []
 
-    for row_idx in range(8, sheet.nrows):
+    for row_idx in range(_first_date_row(sheet), sheet.nrows):
         if not sheet.is_date(row_idx, 0):
             continue
 
